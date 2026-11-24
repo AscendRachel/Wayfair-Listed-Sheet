@@ -34,7 +34,7 @@ export async function mount(el, params, ctx) {
 
   const importInfo = (d) => {
     const i = d.last_import;
-    return i ? `Last import <b>${esc(ago(i.at))}</b> from ${esc(i.filename)}: ${fmt(i.products)} products (${fmt(i.added)} new, ${fmt(i.updated)} updated, ${fmt(i.removed)} removed${i.no_source_link ? `, ${fmt(i.no_source_link)} without a link` : ""}).` : "No sheet imported yet.";
+    return i ? `Last import <b>${esc(ago(i.at))}</b> from ${esc(i.filename)}: ${fmt(i.products)} products (${fmt(i.added)} new, ${fmt(i.updated)} updated, ${fmt(i.removed)} removed${i.no_source_link ? `, ${fmt(i.no_source_link)} without a link` : ""}${i.rows_without_sku ? `, ${fmt(i.rows_without_sku)} rows skipped without a SKU` : ""}).${i.missing_columns?.length ? `<br><b style="color:var(--crit, #c5221f)">⚠️ Columns not found in that file: ${esc(i.missing_columns.join(", "))}.</b> They were left blank; check the header names in row 1 and import again.` : ""}` : "No sheet imported yet.";
   };
 
   const settings = (d) => {

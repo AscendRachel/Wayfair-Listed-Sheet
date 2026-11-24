@@ -20,6 +20,7 @@ from .rules import to_bool, to_float
 # the app works it out again. "Status" is the Live / Not Live / Not Listed ... column.
 HEADER_KEYS = {
     "ASIN": "asin", "PRICE": "price", "AVAILABIITY": "availability", "AVAILABILITY": "availability",
+    "IN STOCK": "availability",                       # the sheet's newer name for the same column
     "ESTIMATED DELIVERY": "delivery", "LISTED": "listed", "INVENTORY": "inventory", "SKU": "sku",
     "PRODUCT NAME": "name", "SOURCE LINK": "link", "PRODUCT LINK": "link", "SOURCE PRICE": "source_price",
     "MARK UP PERCENTAGE": "markup_pct", "PROMO PERCENTAGE": "promo_pct", "PROMO STATUS": "promo_status",
@@ -28,6 +29,15 @@ HEADER_KEYS = {
     "PRODUCT SOLD 2026": "sold_2026", "PRODUCT SOLD 2025": "sold_2025",
     "IMPORTED INVENTORY": "wayfair_qty", "IMPORTED PRICE": "wayfair_price", "EXTRACTED VARIATION": "amazon_variation", "AMAZON VARIATION": "amazon_variation",
     "CATEGORY": "category",
+}
+
+
+# The columns the Listing Status and the prices are worked out from: an import without one of them says so, instead of
+# leaving the column blank in silence (that is how a renamed header once hid every Check Inventory row).
+EXPECTED = {
+    "price": "Price", "availability": "Availability (In Stock)", "delivery": "Estimated Delivery", "listed": "Listed",
+    "inventory": "Inventory", "name": "Product Name", "source_price": "Source Price", "markup_pct": "Mark Up Percentage",
+    "run_at": "Last Optimization Run",
 }
 
 
@@ -182,7 +192,8 @@ def import_products(filename: str, data: bytes, user: str, progress=None) -> dic
         removed = sum(1 for k, r in existing.items() if k not in seen and not r["created_in_app"])
         summary = {"products": len(records), "added": added, "updated": updated, "removed": removed,
                    "duplicate_skus": dup, "rows_without_sku": no_sku, "no_source_link": no_link,
-                   "not_amazon_link": not_amazon}
+                   "not_amazon_link": not_amazon,
+                   "missing_columns": [label for k, label in EXPECTED.items() if k not in idx]}
         c.execute("INSERT INTO imports(at, filename, summary) VALUES(?,?,?)", (now_str(), filename, json.dumps(summary)))
         log_activity(c, user, "imported the catalog sheet", "", f"{len(records):,} products from {filename}")
     note("Updating the word weights", len(records), len(records))
