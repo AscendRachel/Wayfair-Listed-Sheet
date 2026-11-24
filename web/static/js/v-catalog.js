@@ -44,7 +44,7 @@ const COLS = [
   { k: "amz_img", l: "🖼 A", w: 68, t: "amzimg", pin: 1, tip: "Main image on Amazon (read by the scraper). Click to compare it with the Wayfair images." },
   { k: "asin", l: "ASIN", w: 116, t: "text", pin: 1 },
   { k: "price", l: "Price", w: 90, t: "text", r: 1 },
-  { k: "availability", l: "Availabiity", w: 170, t: "text" },
+  { k: "availability", l: "Availability", w: 170, t: "text" },
   { k: "delivery", l: "Estimated Delivery", w: 230, t: "text" },
   { k: "listed", l: "Listed", w: 64, t: "bool" },
   { k: "inventory", l: "Inventory", w: 80, t: "bool" },

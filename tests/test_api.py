@@ -372,7 +372,7 @@ def test_the_version_file_is_in_the_docker_image():
 
 
 def test_a_reimport_fills_cells_an_earlier_import_left_blank(loaded):
-    """The first import may have missed a column (an older version didn't know the sheet's "Availabiity" header): the next
+    """The first import may have missed a column (for example its header had another name): the next
     import of the same scrape fills the blanks instead of keeping them."""
     from app import db
     db.conn().execute("UPDATE products SET availability='' WHERE sku IN ('SKU-1','SKU-2')")
@@ -384,14 +384,15 @@ def test_a_reimport_fills_cells_an_earlier_import_left_blank(loaded):
     assert two["availability"] == "Currently unavailable." and two["status"] == "Out of Stock"
 
 
-def test_the_in_stock_header_is_the_availability_column(admin):
-    """The MAXAYA LLC tab renamed "Availabiity" to "In Stock": without it no row could be Check Inventory / Out of Stock."""
+def test_only_the_availability_header_is_read_as_availability(admin):
+    """Only "Availability" is accepted (not "In Stock" or the old misspelling); any other name is reported as missing."""
     from tests.conftest import SAMPLE_CSV
     put = lambda csv: admin.post("/api/import", content=csv.encode(), headers={"X-Filename": "sheet.csv"}).json()
     one = lambda s: admin.get(f"/api/products/{s}").json()["product"]
-    r = put(SAMPLE_CSV.replace("Availabiity", "Some Other Name", 1))                     # unknown header: the import says which column is missing
-    assert r["missing_columns"] == ["Availability (In Stock)"] and one("SKU-3")["status"] == "Not checked"
-    r = put(SAMPLE_CSV.replace("Availabiity", "In Stock", 1))                            # importing again fills the blanks
+    for name in ("In Stock", "Availabiity"):
+        r = put(SAMPLE_CSV.replace("Availability", name, 1))
+        assert r["missing_columns"] == ["Availability"] and one("SKU-3")["status"] == "Not checked", name
+    r = put(SAMPLE_CSV)                                                                  # the right name: importing again fills the blanks
     assert r["missing_columns"] == []
     assert one("SKU-3")["availability"] == "In Stock" and one("SKU-3")["status"] == "Check Inventory"
     assert one("SKU-2")["status"] == "Out of Stock"

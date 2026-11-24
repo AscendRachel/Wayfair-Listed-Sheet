@@ -19,8 +19,7 @@ from .rules import to_bool, to_float
 # The MAXAYA LLC tab's headers (upper case, trimmed). "Listing Status" there is the calculated status, so it is not read:
 # the app works it out again. "Status" is the Live / Not Live / Not Listed ... column.
 HEADER_KEYS = {
-    "ASIN": "asin", "PRICE": "price", "AVAILABIITY": "availability", "AVAILABILITY": "availability",
-    "IN STOCK": "availability",                       # the sheet's newer name for the same column
+    "ASIN": "asin", "PRICE": "price", "AVAILABILITY": "availability",      # only this name (not "In Stock")
     "ESTIMATED DELIVERY": "delivery", "LISTED": "listed", "INVENTORY": "inventory", "SKU": "sku",
     "PRODUCT NAME": "name", "SOURCE LINK": "link", "PRODUCT LINK": "link", "SOURCE PRICE": "source_price",
     "MARK UP PERCENTAGE": "markup_pct", "PROMO PERCENTAGE": "promo_pct", "PROMO STATUS": "promo_status",
@@ -35,7 +34,7 @@ HEADER_KEYS = {
 # The columns the Listing Status and the prices are worked out from: an import without one of them says so, instead of
 # leaving the column blank in silence (that is how a renamed header once hid every Check Inventory row).
 EXPECTED = {
-    "price": "Price", "availability": "Availability (In Stock)", "delivery": "Estimated Delivery", "listed": "Listed",
+    "price": "Price", "availability": "Availability", "delivery": "Estimated Delivery", "listed": "Listed",
     "inventory": "Inventory", "name": "Product Name", "source_price": "Source Price", "markup_pct": "Mark Up Percentage",
     "run_at": "Last Optimization Run",
 }
@@ -149,7 +148,7 @@ def import_products(filename: str, data: bytes, user: str, progress=None) -> dic
                 note("Saving the products", n_done, len(records))
             old = existing.get(rec["sku"])
             # Keep newer scrape data already in the app; otherwise take the sheet's own values. A cell the app has blank
-            # is always filled from the sheet (an earlier import may have missed a column, e.g. the "Availabiity" header).
+            # is always filled from the sheet (an earlier import may have missed a column, e.g. a differently named header).
             if old and old["run_at"] and (not rec["run_at"] or (rules.parse_run(old["run_at"]) or datetime.min)
                                           >= (rules.parse_run(rec["run_at"]) or datetime.min)):
                 for k in ("price", "availability", "delivery", "run_at"):
