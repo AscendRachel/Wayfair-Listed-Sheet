@@ -86,8 +86,8 @@ def import_products(filename: str, data: bytes, user: str, progress=None) -> dic
     if not header:
         raise ValueError("The file is empty.")
     idx = map_headers(header)
-    if "sku" not in idx or "link" not in idx:
-        raise ValueError("Couldn't find the SKU and Source Link columns. Use a download of the MAXAYA LLC tab.")
+    if not ({"sku", "spn"} & idx.keys()) or "link" not in idx:
+        raise ValueError("Couldn't find the SPN (or SKU) and Source Link columns. Use a download of the MAXAYA LLC tab.")
 
     def g(r, k):
         i = idx.get(k)
@@ -99,18 +99,21 @@ def import_products(filename: str, data: bytes, user: str, progress=None) -> dic
         except ValueError:
             return None
 
-    seen, dup, no_sku, no_link, not_amazon = set(), 0, 0, 0, 0
+    # A row is one product by its SPN (the part number on Wayfair); a row without an SPN goes by its SKU. A blank SKU is
+    # fine: the product gets a temporary one (NEW-000001 ...) until the sheet has one. Only rows with neither are skipped.
+    seen, dup, no_id, no_link, not_amazon = set(), 0, 0, 0, 0
     records = []
     for n, r in enumerate(rows, start=2):
-        sku, link = g(r, "sku"), g(r, "link")
-        if not sku:
-            if link or g(r, "asin"):
-                no_sku += 1
+        sku, spn, link = g(r, "sku"), g(r, "spn"), g(r, "link")
+        if not sku and not spn:
+            if link or g(r, "asin") or g(r, "name"):
+                no_id += 1
             continue
-        if sku in seen:
+        ident = ("spn", spn.lower()) if spn else ("sku", sku.lower())
+        if ident in seen:
             dup += 1
             continue
-        seen.add(sku)
+        seen.add(ident)
         asin = rules.asin_from_link(link) or (g(r, "asin") if re.fullmatch(r"[A-Z0-9]{10}", g(r, "asin")) else "")
         if rules.asin_from_link(link):
             link = f"{AMAZON_BASE}/dp/{asin}"
@@ -122,7 +125,7 @@ def import_products(filename: str, data: bytes, user: str, progress=None) -> dic
             "sku": sku, "asin": asin, "link": link, "name": g(r, "name"), "category": g(r, "category"),
             "source_price": to_float(g(r, "source_price")), "weight": None,
             "markup_pct": pct(r, "markup_pct"), "promo_pct": pct(r, "promo_pct"), "promo_status": g(r, "promo_status"),
-            "spn": g(r, "spn"), "display_sku": g(r, "display_sku"), "mpn": g(r, "mpn"),
+            "spn": spn, "display_sku": g(r, "display_sku"), "mpn": g(r, "mpn"),
             "sheet_variation": g(r, "amazon_variation"),
             "inventory": to_bool(g(r, "inventory")), "listed": to_bool(g(r, "listed")),
             "listing_status": g(r, "listing_status"), "row_order": n,
@@ -139,14 +142,42 @@ def import_products(filename: str, data: bytes, user: str, progress=None) -> dic
     with tx() as c:
         st = db.get_settings(c)
         pr, tf, tt = db.get_pricing(c), float(st["timeframe_days"]), float(st["title_threshold"])
-        existing = {r["sku"]: r for r in c.execute(
-            "SELECT sku, price, availability, delivery, run_at, title, title_ok, amazon_variation, created_in_app, ovr FROM products")}
+        existing = c.execute("""SELECT sku, spn, price, availability, delivery, run_at, title, title_ok, amazon_variation,
+            created_in_app, ovr, active FROM products ORDER BY active DESC, row_order""").fetchall()
+        by_spn, by_sku = {}, {}
+        for r in existing:
+            if (r["spn"] or "").strip():
+                by_spn.setdefault(r["spn"].strip().lower(), r)
+            by_sku.setdefault(r["sku"].lower(), r)
+        taken = set(by_sku)                     # SKUs in use: a product never takes another one's SKU
+        claimed: set[str] = set()               # products already matched to a row of this file
         c.execute("UPDATE products SET active=0 WHERE COALESCE(created_in_app,0)=0")   # app-added products stay active
-        added = updated = 0
+        added = updated = renamed = temp_skus = 0
         for n_done, rec in enumerate(records, start=1):
             if n_done % 400 == 0:
                 note("Saving the products", n_done, len(records))
-            old = existing.get(rec["sku"])
+            sheet_sku, spn = rec["sku"], rec["spn"].lower()
+            old = by_spn.get(spn) if spn else None
+            if old is None and sheet_sku:       # not known by its SPN yet: the product with this SKU, unless it has another SPN
+                cand = by_sku.get(sheet_sku.lower())
+                if cand is not None and not (spn and (cand["spn"] or "").strip()):
+                    old = cand
+            if old is not None and old["sku"] in claimed:
+                old = None
+            if old is not None:
+                claimed.add(old["sku"])
+                rec["sku"] = old["sku"]
+                if sheet_sku and sheet_sku != old["sku"] and (sheet_sku.lower() == old["sku"].lower() or sheet_sku.lower() not in taken):
+                    for table in ("products", "history", "tasks", "activity"):     # the sheet changed this product's SKU
+                        c.execute(f"UPDATE {table} SET sku=? WHERE sku=?", (sheet_sku, old["sku"]))
+                    taken.add(sheet_sku.lower())
+                    rec["sku"] = sheet_sku
+                    claimed.add(sheet_sku)
+                    renamed += 1
+            elif not sheet_sku or sheet_sku.lower() in taken:
+                rec["sku"] = catalog._next_temp_sku(c)       # no SKU in the sheet, or another product already has it
+                temp_skus += 1
+            taken.add(rec["sku"].lower())
             # Keep newer scrape data already in the app; otherwise take the sheet's own values. A cell the app has blank
             # is always filled from the sheet (an earlier import may have missed a column, e.g. a differently named header).
             if old and old["run_at"] and (not rec["run_at"] or (rules.parse_run(old["run_at"]) or datetime.min)
@@ -188,9 +219,10 @@ def import_products(filename: str, data: bytes, user: str, progress=None) -> dic
                     :variation, :source, :manual_status, :remarks, :wayfair_price, :wayfair_qty, :sold_2025,
                     :sold_2026, :created_at, :fee, :auto_price, :price_num, :wayfair_sku_number, :markup_pct, :promo_pct,
                     :promo_status, :spn, :display_sku, :mpn, :amazon_variation)""", {**rec, "created_at": now_str()})
-        removed = sum(1 for k, r in existing.items() if k not in seen and not r["created_in_app"])
+        removed = sum(1 for r in existing if r["active"] and r["sku"] not in claimed and not r["created_in_app"])
         summary = {"products": len(records), "added": added, "updated": updated, "removed": removed,
-                   "duplicate_skus": dup, "rows_without_sku": no_sku, "no_source_link": no_link,
+                   "duplicate_spns": dup, "rows_without_spn_or_sku": no_id, "temporary_skus": temp_skus,
+                   "renamed_skus": renamed, "no_source_link": no_link,
                    "not_amazon_link": not_amazon,
                    "missing_columns": [label for k, label in EXPECTED.items() if k not in idx]}
         c.execute("INSERT INTO imports(at, filename, summary) VALUES(?,?,?)", (now_str(), filename, json.dumps(summary)))

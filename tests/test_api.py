@@ -329,7 +329,7 @@ def test_the_import_runs_in_the_background_and_its_result_is_kept(admin, monkeyp
         if j["state"] != "running":
             break
         time.sleep(0.1)
-    assert j["state"] == "error" and "SKU and Source Link" in j["error"]
+    assert j["state"] == "error" and "SPN (or SKU) and Source Link" in j["error"]
     # only one at a time, and only admins
     gate = __import__("threading").Event()
     real = imports.import_products
@@ -396,6 +396,35 @@ def test_only_the_availability_header_is_read_as_availability(admin):
     assert r["missing_columns"] == []
     assert one("SKU-3")["availability"] == "In Stock" and one("SKU-3")["status"] == "Check Inventory"
     assert one("SKU-2")["status"] == "Out of Stock"
+
+
+def test_the_sheet_import_matches_products_by_spn(admin):
+    """A row is a product by its SPN: a blank SKU still imports (with a temporary SKU), a changed SKU follows its SPN,
+    a row without an SPN goes by its SKU, and only rows with neither are skipped."""
+    head = "SKU,SPN,Product Name,Source Link,Source Price\n"
+    link = lambda n: f"https://www.amazon.com/dp/B0000SPN{n:02d}"
+    put = lambda body: admin.post("/api/import", content=(head + body).encode(), headers={"X-Filename": "spn.csv"}).json()
+    one = lambda s: admin.get(f"/api/products/{s}").json()["product"]
+    r = put(f"P-1,WF-1,One,{link(1)},5\n"
+            f",WF-2,Two (no SKU),{link(2)},5\n"
+            f"P-3,,Three (no SPN),{link(3)},5\n"
+            f"P-9,wf-1,Repeated SPN,{link(9)},5\n"
+            f",,Neither,{link(8)},5\n")
+    assert (r["products"], r["duplicate_spns"], r["rows_without_spn_or_sku"], r["temporary_skus"]) == (3, 1, 1, 1)
+    temp = admin.get("/api/products", params={"q": "WF-2"}).json()["items"][0]["sku"]
+    assert temp.startswith("NEW-") and one(temp)["name"] == "Two (no SKU)"
+    assert one("P-1")["name"] == "One" and one("P-3")["name"] == "Three (no SPN)"
+    assert admin.post("/api/products/P-1", json={"patch": {"remarks": "kept"}}).status_code == 200
+    # the next sheet: WF-2 got its SKU, WF-1's SKU changed, P-3 still has no SPN
+    r = put(f"P-1B,WF-1,One,{link(1)},5\n"
+            f"P-2,WF-2,Two,{link(2)},5\n"
+            f"P-3,,Three,{link(3)},5\n")
+    assert (r["added"], r["updated"], r["removed"], r["renamed_skus"], r["temporary_skus"]) == (0, 3, 0, 2, 0)
+    assert one("P-1B")["remarks"] == "kept" and one("P-2")["spn"] == "WF-2" and one("P-3")["name"] == "Three"
+    assert admin.get("/api/products/P-1").status_code >= 400          # the old SKU is gone
+    # a new SPN whose SKU belongs to another product: kept, with a temporary SKU
+    r = put(f"P-1B,WF-1,One,{link(1)},5\nP-2,WF-7,Seven,{link(7)},5\n")
+    assert r["temporary_skus"] == 1 and r["added"] == 1 and one("P-2")["spn"] == "WF-2"
 
 
 def test_search_finds_a_product_by_its_link(loaded):
