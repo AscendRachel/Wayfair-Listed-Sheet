@@ -104,15 +104,28 @@ def rows(skus: list[str]) -> list[dict]:
     return out
 
 
+_ROW_NUMBERS: dict = {"key": None, "map": {}}
+
+
 def default_row_numbers(c, skus: list[str]) -> dict[str, int]:
     """Each product's row number in the default view (every product, no filter, no sort), like the row numbers of a
-    Google Sheets filter view: a filtered, searched or sorted list keeps showing them."""
+    Google Sheets filter view: a filtered, searched or sorted list keeps showing them.
+    Numbering every product is the costly part, so it is done once and kept until the products or their order change
+    (an import, a new or deleted row, a SKU rename): scrolling asks for rows many times a second."""
     if not skus:
         return {}
-    marks = ",".join("?" * len(skus))
-    return {r[0]: r[1] for r in c.execute(
-        f"""SELECT sku, n FROM (SELECT sku, ROW_NUMBER() OVER (ORDER BY row_order, rowid) AS n FROM products WHERE active=1)
-            WHERE sku IN ({marks})""", skus)}
+    key = tuple(c.execute("SELECT COUNT(*), TOTAL(row_order), MAX(rowid), TOTAL(rowid * row_order), "
+                          "(SELECT COUNT(*) FROM products) FROM products WHERE active=1").fetchone())
+    cached = _ROW_NUMBERS
+    # a SKU it doesn't know (renamed since) rebuilds it once; a removed product asked for again doesn't rebuild every time
+    if cached["key"] != key or (not cached.get("rechecked") and any(s not in cached["map"] for s in skus)):
+        m = {r[0]: r[1] for r in c.execute(
+            "SELECT sku, ROW_NUMBER() OVER (ORDER BY row_order, rowid) FROM products WHERE active=1")}
+        cached = {"key": key, "map": m, "rechecked": cached["key"] == key}
+        _ROW_NUMBERS.clear()
+        _ROW_NUMBERS.update(cached)
+    m = cached["map"]
+    return {s: m[s] for s in skus if s in m}
 
 
 def _still_matching(c, skus: list[str], q: dict) -> set[str]:

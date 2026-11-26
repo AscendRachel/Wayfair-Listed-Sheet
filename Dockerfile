@@ -25,8 +25,10 @@ USER app
 VOLUME /data
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/api/ping' % os.environ.get('GT_PORT','8000'), timeout=4)"
+# Asked with bash itself, not a new Python: starting Python every 30 s in each app took a noticeable share of a small
+# server's CPU when several apps run side by side.
+HEALTHCHECK --interval=60s --timeout=5s --start-period=30s --retries=3 \
+  CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/${GT_PORT:-8000} && printf 'GET /api/ping HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && timeout 4 head -n 1 <&3 | grep -q ' 200 '"]
 
 # One process on purpose: the database is a single SQLite file, so never run several copies against the same /data.
 CMD ["python", "run.py"]

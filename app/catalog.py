@@ -347,7 +347,8 @@ def duplicate_values(c, rows) -> dict[str, set]:
         for i in range(0, len(vals), 500):
             chunk = vals[i:i + 500]
             found.update(x[0] for x in c.execute(
-                f"SELECT LOWER(TRIM({col})) v FROM products WHERE active=1 AND LOWER(TRIM({col})) IN ({','.join('?' * len(chunk))}) "
+                f"SELECT LOWER(TRIM({col})) v FROM products INDEXED BY ix_dup_{col} "        # db.INDEXES; SQLite won't pick it itself
+                f"WHERE active=1 AND LOWER(TRIM({col})) IN ({','.join('?' * len(chunk))}) "
                 f"GROUP BY v HAVING COUNT(*)>1", chunk))
         out[k] = found
     return out

@@ -171,6 +171,10 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS ix_tasks_state ON tasks(run_id, state, seq)",
     "CREATE INDEX IF NOT EXISTS ix_activity_sku ON activity(sku, id)",
     "CREATE INDEX IF NOT EXISTS ix_deleted_sku ON deleted_products(sku, id)",
+    # the duplicate check (catalog.DUP_COLS) looks values up as LOWER(TRIM(col)) among active rows: without these each
+    # page of the sheet read the whole table six times
+    *(f"CREATE INDEX IF NOT EXISTS ix_dup_{c} ON products(LOWER(TRIM({c}))) WHERE active=1"
+      for c in ("asin", "name", "link", "spn", "upc", "mpn")),
 ]
 
 DEFAULT_SETTINGS = {"zip_code": "32809", "timeframe_days": "6", "delay_min_seconds": "1.5", "delay_max_seconds": "3.5",

@@ -593,6 +593,21 @@ async function ensureRows(a, b) {
   return need.length;
 }
 
+// Rows still missing on screen are asked for in whole blocks (the ones in view plus the next one), at most four times a
+// second: scrolling fast through thousands of rows used to send a request for every few rows it passed.
+const BLOCK = 100;
+let rowTimer = null, lastRowFetch = 0;
+function wantRows() {
+  if (rowTimer) return;
+  rowTimer = setTimeout(() => {
+    rowTimer = null;
+    lastRowFetch = Date.now();
+    if (!el.scroller?.isConnected) return;
+    const [a, b] = visibleRange();
+    ensureRows(Math.floor(a / BLOCK) * BLOCK, (Math.floor(b / BLOCK) + 2) * BLOCK - 1).then((n) => n && render());
+  }, Math.max(0, 250 - (Date.now() - lastRowFetch)));
+}
+
 // ------------------------------------------------------------------ render
 function visibleRange() {
   const st = el.scroller.scrollTop, vh = el.scroller.clientHeight;
@@ -638,7 +653,7 @@ function render() {
   el.body.innerHTML = html;
   const missing = [];
   for (let i = a; i <= b; i++) if (!S.cache.has(S.ids[i]) && !isDraft(S.ids[i])) { missing.push(i); }
-  if (missing.length) ensureRows(missing[0], missing[missing.length - 1]).then((n) => n && render());
+  if (missing.length) wantRows();
   drawFillHandle();
   drawFbar();
   statusLine();
