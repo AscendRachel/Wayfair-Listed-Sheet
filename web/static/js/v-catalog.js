@@ -55,9 +55,9 @@ const COLS = [
   { k: "fee", l: "3PL Fee", w: 80, t: "money", calc: 1, tip: "=3 when the row has a Source Link (the fee is set on the Pricing tab)" },
   { k: "cost", l: "Source Price + 3PL Fee", w: 150, t: "money", calc: 1, tip: "=Source Price + 3PL Fee" },
   { k: "markup_pct", l: "Mark Up Percentage", w: 130, t: "pct", tip: "Typed per product: 48% (or 0.48)" },
-  { k: "selling", l: "Selling Price", w: 110, t: "money", calc: 1, tip: "=(Source Price + 3PL Fee) × (1 + Mark Up Percentage)" },
+  { k: "selling", l: "Selling Price", w: 110, t: "money", nosym: 1, calc: 1, tip: "=(Source Price + 3PL Fee) × (1 + Mark Up Percentage)" },
   { k: "promo_pct", l: "PROMO PERCENTAGE", w: 140, t: "pct", tip: "Typed per product: 20% (or 0.2)" },
-  { k: "promo_price", l: "Promo Price", w: 110, t: "money", calc: 1, tip: "=Selling Price ÷ (1 − PROMO PERCENTAGE); blank without a promo %" },
+  { k: "promo_price", l: "Promo Price", w: 110, t: "money", nosym: 1, calc: 1, tip: "=Selling Price ÷ (1 − PROMO PERCENTAGE); blank without a promo %" },
   { k: "promo_status", l: "Promo Status", w: 110, t: "text" },
   { k: "source", l: "Source", w: 90, t: "text" },
   { k: "listing_status", l: "Status", w: 110, t: "text", list: "listing_statuses" },
@@ -181,7 +181,7 @@ function display(row, c) {
   const v = row[c.k];
   switch (c.t) {
     case "bool": return row._draft && v == null ? "" : v ? "TRUE" : "FALSE";
-    case "money": return v == null || v === "" ? "" : money(v);
+    case "money": return v == null || v === "" ? "" : c.nosym ? money(v).replace("$", "") : money(v);      // nosym: the number without the $ sign
     case "pct": return v == null || v === "" ? "" : `${+(v * 100).toFixed(2)}%`;
     default: return v == null ? "" : String(v);
   }

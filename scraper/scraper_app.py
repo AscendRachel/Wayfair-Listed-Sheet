@@ -319,6 +319,15 @@ class BrowserGone(Exception):
     """The browser (or the Playwright driver that controls it) closed by itself in the middle of a product."""
 
 
+class PageCrashed(Exception):
+    """The browser tab died (Chrome shows "Aw, Snap!"), usually out of memory on a heavy page. The tab can't load anything
+    again, so it is replaced by a fresh one; the browser itself is still fine."""
+
+
+def page_crashed(e) -> bool:
+    return "crash" in str(e).lower()
+
+
 def browser_gone(e) -> bool:
     """True when the error means the browser or its driver is dead, as opposed to a slow or broken page."""
     text = str(e).lower()
@@ -598,6 +607,29 @@ class Engine:
                 break
             try:
                 res = await self.scrape(page, item, n)
+            except PageCrashed:
+                item["crashes"] = item.get("crashes", 0) + 1
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+                try:
+                    page = await ctx.new_page()                 # the same browser and cookies (ZIP code), a new tab
+                except Exception as e:
+                    self.log(f"Window {n}: couldn't open a new tab after a crash ({str(e).splitlines()[0][:80]}).")
+                    self.buffer.appendleft(item)
+                    self.browser_died = True
+                    break
+                if item["crashes"] < 2:
+                    self.log(f"Window {n}: the tab crashed on {item['sku']}. Opened a fresh tab; trying it again.")
+                    self.buffer.appendleft(item)
+                    await self.sleep(3)
+                    continue
+                self.log(f"Window {n}: {item['sku']} crashed the tab twice; skipped for now.")
+                self.failed += 1
+                res = {**self.base(), "run_id": self.run_id, "sku": item["sku"], "result": "error", "price": "",
+                       "availability": "", "delivery": "", "title": "", "seconds": 0,
+                       "run_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
             except BrowserGone:
                 self.buffer.appendleft(item)                 # not the product's fault: it is tried again once the browser is back
                 self.browser_died = True
@@ -654,6 +686,8 @@ class Engine:
             except Exception as e:
                 if browser_gone(e):
                     raise BrowserGone(str(e).splitlines()[0][:90])
+                if page_crashed(e):
+                    raise PageCrashed(str(e).splitlines()[0][:90])
                 result = "timeout" if "Timeout" in type(e).__name__ else "error"
                 if attempt == 2:
                     self.log(f"Window {n}: {item['sku']} failed ({str(e).splitlines()[0][:90]})")

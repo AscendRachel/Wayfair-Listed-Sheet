@@ -450,3 +450,15 @@ def test_wayfair_media_export_merges_images_by_sku(loaded):
     assert loaded.get("/api/products/SKU-1").json()["product"]["images"] == [f"https://img.test/SKU-1/{i}.jpg" for i in range(3)]
     assert loaded.get("/api/products/SKU-2").json()["product"]["images"] == ["https://img.test/SKU-2/0.jpg", "https://img.test/SKU-2/1.jpg"]
     assert loaded.post("/api/wayfair/images/apply", json={"token": pv["token"]}).status_code == 400   # used up
+
+
+def test_pages_load_their_files_from_an_address_with_the_version(admin):
+    client = admin
+    """A new release gets new file addresses, so a normal reload never runs yesterday's scripts against today's server."""
+    from app import version
+    page = client.get("/login").text
+    assert f'href="/static/v{version.VERSION}/app.css"' in page and '"/static/app.css"' not in page
+    new = client.get(f"/static/v{version.VERSION}/js/main.js")
+    assert new.status_code == 200 and new.text == client.get("/static/js/main.js").text
+    assert client.get("/static/v0.0.1/js/util.js").status_code == 200        # a page left open from an older release still loads
+    assert client.get(f"/static/v{version.VERSION}/../app/main.py").status_code == 404

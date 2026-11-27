@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{APP_NAME}}</title>
 <link rel="icon" href="{{ICON_HREF}}">
-<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/v{{VERSION}}/app.css">
 {{BRAND_STYLE}}
 <script>try{var t=localStorage.getItem("gt_theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
@@ -17,6 +17,6 @@
 </header>
 <main id="main"><div class="empty">Loading…</div></main>
 <div id="toasts" aria-live="polite"></div>
-<script type="module" src="/static/js/main.js"></script>
+<script type="module" src="/static/v{{VERSION}}/js/main.js"></script>
 </body>
 </html>

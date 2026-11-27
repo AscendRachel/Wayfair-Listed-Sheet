@@ -155,3 +155,59 @@ def test_a_dead_browser_is_told_apart_from_a_slow_page():
     assert gone(Exception("Page.goto: Target page, context or browser has been closed"))
     assert not gone(Exception("Page.goto: net::ERR_CONNECTION_RESET at https://www.amazon.com"))
     assert not gone(Exception("Page.goto: Timeout 30000ms exceeded."))
+
+
+def test_a_crashed_tab_is_replaced_and_the_product_tried_again():
+    """Chrome's "Aw, Snap!" leaves a tab that fails every product at once; the window must open a fresh tab instead."""
+    import collections, sys
+    sys.path.insert(0, str(ROOT / "scraper"))
+    import scraper_app as sa
+
+    class Page:
+        def __init__(self, dead):
+            self.dead, self.closed = dead, False
+
+        async def goto(self, *a, **k):
+            raise Exception("Page.goto: Page crashed")
+
+        async def close(self):
+            self.closed = True
+
+    class Ctx:
+        def __init__(self):
+            self.pages, self.made = [Page(dead=True)], 0
+
+        async def new_page(self):
+            self.made += 1
+            return Page(dead=False)
+
+    eng = sa.Engine({**sa.DEFAULTS, "page_timeout_seconds": 1}, lambda *a: None)
+    eng.stop_flag.clear()
+    eng.browser_died, eng.run_id, eng.buffer, eng.lines, eng.sent = False, 1, collections.deque(), [], []
+    eng.conf = {"delay_min_seconds": 0, "delay_max_seconds": 0}
+    eng.pause_factor = 1.0
+    eng.log = eng.lines.append
+    eng.base = lambda: {}
+    eng.push_stats = lambda: None
+    items = iter([{"sku": "A", "link": "x"}, {"sku": "B", "link": "y"}])
+
+    async def next_item():
+        return eng.buffer.popleft() if eng.buffer else next(items, None)
+
+    async def scrape(page, item, n):                  # the real scrape turns the crash error into PageCrashed
+        if page.dead:
+            return await sa.Engine.scrape(eng, page, item, n)
+        return {"sku": item["sku"], "result": "ok"}
+
+    async def send(res):
+        eng.sent.append(res)
+
+    async def nosleep(s):
+        pass
+
+    eng.next_item, eng.scrape, eng.send_result, eng.sleep = next_item, scrape, send, nosleep
+    ctx = Ctx()
+    asyncio.run(eng.worker(1, ctx))
+    assert ctx.made == 1 and ctx.pages[0].closed
+    assert eng.sent == [{"sku": "A", "result": "ok"}, {"sku": "B", "result": "ok"}]
+    assert any("crashed" in line for line in eng.lines)

@@ -5,6 +5,7 @@ Run with:  python run.py     (or: uvicorn app.main:app)
 
 from __future__ import annotations
 
+import re
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -21,6 +22,7 @@ from .db import ROOT, conn, now_str, tx
 
 WEB = ROOT / "web"
 NO_STORE = {"Cache-Control": "no-store"}
+STATIC_VERSIONED = re.compile(r"^/static/v[^/]+/(.+)$")
 
 # Windows lets installed programs override file types in its registry (an .svg can come back as
 # "document/ConceptDrawDIAGRAM", a .js as text/plain), and browsers refuse scripts and images served
@@ -88,6 +90,11 @@ async def _bad_body(_, e: RequestValidationError):
 
 @app.middleware("http")
 async def _headers(request: Request, call_next):
+    # The pages load /static/v<version>/..., the same files as /static/...: every release has new addresses, so a normal
+    # reload gets the new screens even where a proxy (Cloudflare) tells browsers to keep the old files for hours.
+    m = STATIC_VERSIONED.match(request.scope["path"])
+    if m:
+        request.scope["path"] = "/static/" + m.group(1)
     resp = await call_next(request)
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
