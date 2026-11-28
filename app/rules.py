@@ -69,11 +69,12 @@ MONTHS = ["January", "February", "March", "April", "May", "June", "July", "Augus
 MONTH_RE = re.compile(r"(" + "|".join(MONTHS) + r")\s+(\d{1,2})")
 RUN_FORMATS = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M", "%m/%d/%Y %H:%M:%S", "%m/%d/%Y %H:%M")
 
-STATUSES = ["OOS Different Item", "OOS Variation", "TimeFrame", "Out of Stock", "Low Inventory", "High Price", "Low Price", "Manual Check", "Check Inventory",
-            "Normal", "Not checked"]
+STATUSES = ["Out of Stock", "OOS Different Item", "OOS Variation", "High Price", "Low Inventory", "TimeFrame", "Low Price",
+            "Manual Check", "Check Inventory", "Normal", "Not checked"]
 
 
-PROBLEM_STATUSES = ("OOS Different Item", "OOS Variation", "TimeFrame", "Out of Stock", "Low Inventory", "High Price", "Low Price", "Manual Check", "Check Inventory")
+PROBLEM_STATUSES = ("Out of Stock", "OOS Different Item", "OOS Variation", "High Price", "Low Inventory", "TimeFrame",
+                    "Low Price", "Manual Check", "Check Inventory")
 
 
 def scrap_price(text: str | None) -> float | None:
